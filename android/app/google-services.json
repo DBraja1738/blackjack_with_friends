@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "933416376979",
+    "project_id": "blackjack-with-friends-cbe73",
+    "storage_bucket": "blackjack-with-friends-cbe73.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:933416376979:android:1fe9ebc67fab722d7e8b66",
+        "android_client_info": {
+          "package_name": "com.example.blackjack_with_friends.blackjack_with_friends"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuk5ulzS6IVYDA3lzOISmHtHxMUO4AuK4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
