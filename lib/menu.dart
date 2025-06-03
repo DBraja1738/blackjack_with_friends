@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:blackjack_with_friends/accounts.dart';
+import 'package:blackjack_with_friends/game_screen.dart';
 import 'package:flutter/material.dart';
 
 import 'widgets/decorations.dart';
@@ -46,7 +47,7 @@ class MainMenu extends StatelessWidget {
                         child: ElevatedButton(
                             style: AppDecorations.buttonStyle,
                             onPressed: (){
-                              Navigator.push(context, MaterialPageRoute(builder: (context)=>const Placeholder()));
+                              Navigator.push(context, MaterialPageRoute(builder: (context)=>const BlackjackGame()));
                             },
                             child: Text("Start")
                         ),
