@@ -23,54 +23,27 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   int currentBet = 0;
   bool isDealing = false;
 
-
-  late AnimationController cardAnimationController;
-  late Animation<double> cardAnimation;
-
   @override
   void initState() {
     super.initState();
     initializeGame();
-    initializeAnimations();
   }
 
-  void initializeGame() async{
-
-    if(user!=null){
-      try{
+  void initializeGame() async {
+    if (user != null) {
+      try {
         final doc = await FirebaseFirestore.instance
-                          .collection("users")
-                          .doc(user!.uid)
-                          .get();
+            .collection("users")
+            .doc(user!.uid)
+            .get();
         setState(() {
-          playerChips = doc.data()?["chips"] ?? 1000;
+          playerChips = doc.data()?["current_chips"] ?? 1000;
         });
-      }catch(e){
-        showSnackBarMessage("error: $e");
-      }
-
+      } catch (e) {}
     }
     deck = Deck();
     playerHand = Hand();
     dealerHand = Hand();
-  }
-
-  void initializeAnimations() {
-    cardAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    );
-
-    cardAnimation = CurvedAnimation(
-      parent: cardAnimationController,
-      curve: Curves.easeInOut,
-    );
-  }
-
-  @override
-  void dispose() {
-    cardAnimationController.dispose();
-    super.dispose();
   }
 
   void startNewRound() {
@@ -79,14 +52,11 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       playerHand.clear();
       dealerHand.clear();
       deck.reset();
-
-
       dealInitialCards();
     });
   }
 
   void dealInitialCards() async {
-
     for (int i = 0; i < 2; i++) {
       await dealCardToPlayer();
       await Future.delayed(const Duration(milliseconds: 300));
@@ -94,7 +64,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
-    // Check for blackjack
     if (playerHand.isBlackjack) {
       endRound();
     }
@@ -106,8 +75,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       setState(() {
         playerHand.addCard(card);
       });
-      cardAnimationController.forward(from: 0);
-      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
@@ -118,23 +85,20 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       setState(() {
         dealerHand.addCard(card);
       });
-      cardAnimationController.forward(from: 0);
     }
   }
 
   void hit() async {
-    if (gameState != GameState.playing) return;
+    if (gameState != GameState.playing || isDealing) return;
+
+    setState(() {
+      isDealing = true;
+    });
 
     await dealCardToPlayer();
 
     setState(() {
-      isDealing=true;
-    });
-
-    await dealCardToDealer();
-
-    setState(() {
-      isDealing=false;
+      isDealing = false;
     });
 
     if (playerHand.isBust) {
@@ -143,7 +107,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   }
 
   void stand() {
-    if (gameState != GameState.playing) return;
+    if (gameState != GameState.playing || isDealing) return;
 
     setState(() {
       gameState = GameState.dealerTurn;
@@ -153,7 +117,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   }
 
   void dealerPlay() async {
-
     setState(() {
       dealerHand.cards[1].faceUp = true;
     });
@@ -168,37 +131,27 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     endRound();
   }
 
-  void endRound() async{
+  void endRound() async {
     setState(() {
       gameState = GameState.roundEnd;
 
-
       if (playerHand.isBust) {
-        // player busts, loses bet
       } else if (dealerHand.isBust) {
-        // dealer busts, player wins
         playerChips += currentBet * 2;
       } else if (playerHand.isBlackjack && !dealerHand.isBlackjack) {
-        // player blackjack
         playerChips += (currentBet * 2.5).round();
       } else if (playerHand.value > dealerHand.value) {
-        // player wins
         playerChips += currentBet * 2;
       } else if (playerHand.value == dealerHand.value) {
-        // Push
         playerChips += currentBet;
       }
-      // else player loses (bet already deducted)
-
-
     });
-    if(user!=null){
+
+    if (user != null) {
       await FirebaseFirestore.instance
           .collection("users")
           .doc(user!.uid)
-          .update({
-        "current_chips" : playerChips
-      });
+          .update({"current_chips": playerChips});
     }
   }
 
@@ -221,12 +174,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     return "Push!";
   }
 
-  void showSnackBarMessage(String message){
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -234,12 +181,11 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
 
-
         if (user != null) {
           await FirebaseFirestore.instance
               .collection("users")
               .doc(user!.uid)
-              .update({"chips": playerChips});
+              .update({"current_chips": playerChips});
         }
 
         if (context.mounted) {
@@ -263,7 +209,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         ),
         body: Column(
           children: [
-            // Dealer's hand
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -282,7 +227,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
                 ],
               ),
             ),
-      
             if (gameState == GameState.roundEnd)
               Container(
                 padding: const EdgeInsets.all(20),
@@ -295,8 +239,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
                   ),
                 ),
               ),
-      
-            //player hand
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -310,8 +252,6 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
                 ],
               ),
             ),
-      
-            // Action buttons
             buildActionButtons(),
           ],
         ),
