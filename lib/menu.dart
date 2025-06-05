@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:blackjack_with_friends/accounts.dart';
 import 'package:blackjack_with_friends/game_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 
 import 'widgets/decorations.dart';
 
@@ -17,8 +20,50 @@ class MainApp extends StatelessWidget {
   }
 }
 
-class MainMenu extends StatelessWidget {
+class MainMenu extends StatefulWidget {
   const MainMenu({super.key});
+
+  @override
+  State<MainMenu> createState() => _MainMenuState();
+}
+
+class _MainMenuState extends State<MainMenu> {
+  bool isLoggedIn = false;
+  String username = "";
+
+
+  void loadUsername() async{
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    try{
+      DocumentSnapshot snapshot = await firestore
+          .collection("users")
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .get();
+
+      var userData = snapshot.data() as Map<String, dynamic>;
+
+      username = userData["username"] ?? "";
+      setState(() {
+
+      });
+    }catch(e){
+      print("failed to fetch user $e");
+      rethrow;
+    }
+  }
+
+  @override
+  void initState(){
+
+    super.initState();
+    if(FirebaseAuth.instance.currentUser != null){
+      loadUsername();
+
+      isLoggedIn = true;
+
+    }
+
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +73,7 @@ class MainMenu extends StatelessWidget {
 
         children: <Widget>[
           Padding(padding: EdgeInsets.symmetric(vertical: 100), child: Text("Blackjack with friends", textScaler: TextScaler.linear(2),),),
+          if(isLoggedIn) Text("hello $username"),
           Row(
             children: <Widget>[
               Expanded(
