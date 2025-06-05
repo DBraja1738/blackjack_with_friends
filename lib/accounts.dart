@@ -62,6 +62,8 @@ class _AccountTabState extends State<AccountTab> {
   }
 
   Future<void> _login() async {
+    FirebaseAuth.instance.signOut();
+
     if (_formKey.currentState!.validate()) {
       try {
         await FirebaseAuth.instance.signInWithEmailAndPassword(

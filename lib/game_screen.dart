@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'game_models.dart';
 import 'widgets/decorations.dart';
@@ -10,15 +12,18 @@ class BlackjackGame extends StatefulWidget {
 }
 
 class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateMixin {
-  late Deck deck;
-  late Hand playerHand;
-  late Hand dealerHand;
+  Deck deck = Deck();
+  Hand playerHand = Hand();
+  Hand dealerHand = Hand();
+
+  final user = FirebaseAuth.instance.currentUser;
 
   GameState gameState = GameState.betting;
-  int playerChips = 1000;
+  int playerChips = 0;
   int currentBet = 0;
+  bool isDealing = false;
 
-  // Animation controllers
+
   late AnimationController cardAnimationController;
   late Animation<double> cardAnimation;
 
@@ -29,7 +34,22 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     initializeAnimations();
   }
 
-  void initializeGame() {
+  void initializeGame() async{
+
+    if(user!=null){
+      try{
+        final doc = await FirebaseFirestore.instance
+                          .collection("users")
+                          .doc(user!.uid)
+                          .get();
+        setState(() {
+          playerChips = doc.data()?["chips"] ?? 1000;
+        });
+      }catch(e){
+        showSnackBarMessage("error: $e");
+      }
+
+    }
     deck = Deck();
     playerHand = Hand();
     dealerHand = Hand();
@@ -60,13 +80,13 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       dealerHand.clear();
       deck.reset();
 
-      // Deal initial cards
+
       dealInitialCards();
     });
   }
 
   void dealInitialCards() async {
-    // Deal cards with animation
+
     for (int i = 0; i < 2; i++) {
       await dealCardToPlayer();
       await Future.delayed(const Duration(milliseconds: 300));
@@ -87,6 +107,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         playerHand.addCard(card);
       });
       cardAnimationController.forward(from: 0);
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
@@ -106,6 +127,16 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
 
     await dealCardToPlayer();
 
+    setState(() {
+      isDealing=true;
+    });
+
+    await dealCardToDealer();
+
+    setState(() {
+      isDealing=false;
+    });
+
     if (playerHand.isBust) {
       endRound();
     }
@@ -122,14 +153,13 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   }
 
   void dealerPlay() async {
-    // Reveal hidden card
+
     setState(() {
       dealerHand.cards[1].faceUp = true;
     });
 
     await Future.delayed(const Duration(milliseconds: 1000));
 
-    // Dealer draws until 17 or bust
     while (dealerHand.value < 17) {
       await dealCardToDealer();
       await Future.delayed(const Duration(milliseconds: 1000));
@@ -138,7 +168,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     endRound();
   }
 
-  void endRound() {
+  void endRound() async{
     setState(() {
       gameState = GameState.roundEnd;
 
@@ -159,7 +189,17 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         playerChips += currentBet;
       }
       // else player loses (bet already deducted)
+
+
     });
+    if(user!=null){
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(user!.uid)
+          .update({
+        "current_chips" : playerChips
+      });
+    }
   }
 
   void placeBet(int amount) {
@@ -181,106 +221,129 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     return "Push!";
   }
 
+  void showSnackBarMessage(String message){
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.green[800],
-      appBar: AppBar(
-        title: const Text('Blackjack'),
-        backgroundColor: Colors.green[900],
-        actions: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Chip(
-              label: Text('Chips: $playerChips'),
-              backgroundColor: Colors.yellow[700],
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Dealer's hand
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'Dealer',
-                  style: TextStyle(color: Colors.white, fontSize: 20),
-                ),
-                const SizedBox(height: 10),
-                buildHand(dealerHand),
-                if (gameState == GameState.roundEnd)
-                  Text(
-                    'Value: ${dealerHand.value}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-              ],
-            ),
-          ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
 
-          if (gameState == GameState.roundEnd)
-            Container(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                getResultMessage(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+
+        if (user != null) {
+          await FirebaseFirestore.instance
+              .collection("users")
+              .doc(user!.uid)
+              .update({"chips": playerChips});
+        }
+
+        if (context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.green[800],
+        appBar: AppBar(
+          title: const Text('Blackjack'),
+          backgroundColor: Colors.green[900],
+          actions: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Chip(
+                label: Text('Chips: $playerChips'),
+                backgroundColor: Colors.yellow[700],
               ),
             ),
-
-          //player hand
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                buildHand(playerHand),
-                const SizedBox(height: 10),
-                Text(
-                  'Your Hand: ${playerHand.value}',
-                  style: const TextStyle(color: Colors.white, fontSize: 20),
-                ),
-              ],
+          ],
+        ),
+        body: Column(
+          children: [
+            // Dealer's hand
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Dealer',
+                    style: TextStyle(color: Colors.white, fontSize: 20),
+                  ),
+                  const SizedBox(height: 10),
+                  buildHand(dealerHand),
+                  if (gameState == GameState.roundEnd)
+                    Text(
+                      'Value: ${dealerHand.value}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                ],
+              ),
             ),
-          ),
-
-          // Action buttons
-          buildActionButtons(),
-        ],
+      
+            if (gameState == GameState.roundEnd)
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  getResultMessage(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+      
+            //player hand
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  buildHand(playerHand),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Your Hand: ${playerHand.value}',
+                    style: const TextStyle(color: Colors.white, fontSize: 20),
+                  ),
+                ],
+              ),
+            ),
+      
+            // Action buttons
+            buildActionButtons(),
+          ],
+        ),
       ),
     );
   }
 
   Widget buildHand(Hand hand) {
-    return SizedBox(
-      height: 120,
-      child: Stack(
-        children: hand.cards.asMap().entries.map((entry) {
-          final index = entry.key;
-          final card = entry.value;
+    const cardWidth = 80.0;
+    const overlap = 30.0;
+    final totalWidth = cardWidth + (hand.cards.length - 1) * overlap;
 
-          return AnimatedBuilder(
-            animation: cardAnimation,
-            builder: (context, child) {
-              return Transform.translate(
-                offset: Offset(index * 30.0 - hand.cards.length * 15.0, 0),
-                child: Transform.scale(
-                  scale: cardAnimation.value,
-                  child: _buildCard(card),
-                ),
-              );
-            },
-          );
-        }).toList(),
+    return Center(
+      child: SizedBox(
+        height: 120,
+        width: totalWidth,
+        child: Stack(
+          children: hand.cards.asMap().entries.map((entry) {
+            final index = entry.key;
+            final card = entry.value;
+
+            return Positioned(
+              left: index * overlap,
+              child: buildCard(card),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
 
-  Widget _buildCard(PlayingCard card) {
+  Widget buildCard(PlayingCard card) {
     return Container(
       width: 80,
       height: 120,
@@ -360,12 +423,12 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         children: [
           ElevatedButton(
             style: AppDecorations.buttonStyle,
-            onPressed: hit,
+            onPressed: isDealing ? null : hit,
             child: const Text('HIT'),
           ),
           ElevatedButton(
             style: AppDecorations.buttonStyleRed,
-            onPressed: stand,
+            onPressed: isDealing ? null : stand,
             child: const Text('STAND'),
           ),
         ],
