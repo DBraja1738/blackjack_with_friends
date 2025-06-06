@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:blackjack_with_friends/accounts.dart';
+import 'package:blackjack_with_friends/daily_login.dart';
 import 'package:blackjack_with_friends/game_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -118,8 +119,19 @@ class _MainMenuState extends State<MainMenu> {
                           child: Text("EXIT"),
 
                         ),
-                      ),
 
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: DailyBonusSystem(
+                          onBonusClaimed: (){
+                            setState(() {
+
+                            });
+                          },
+                        )
+
+                      ),
                     ],
                   )
 
