@@ -195,12 +195,12 @@ class _DailyBonusSystemState extends State<DailyBonusSystem> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
+            const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.card_giftcard, color: Colors.white, size: 28),
-                const SizedBox(width: 8),
-                const Text(
+                Icon(Icons.card_giftcard, color: Colors.white, size: 28),
+                SizedBox(width: 8),
+                Text(
                   'Daily Bonus',
                   style: TextStyle(
                     color: Colors.white,

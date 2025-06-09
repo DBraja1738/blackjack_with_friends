@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'game_models.dart';
+import 'classes/game_models.dart';
 import 'widgets/decorations.dart';
 
 class BlackjackGame extends StatefulWidget {

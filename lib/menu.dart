@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:blackjack_with_friends/accounts.dart';
 import 'package:blackjack_with_friends/daily_login.dart';
-import 'package:blackjack_with_friends/game_screen.dart';
+import 'package:blackjack_with_friends/menu_for_selecting_mode.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -73,7 +73,13 @@ class _MainMenuState extends State<MainMenu> {
       body: Column(
 
         children: <Widget>[
-          Padding(padding: EdgeInsets.symmetric(vertical: 100), child: Text("Blackjack with friends", textScaler: TextScaler.linear(2),),),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 100),
+            child: Text(
+              "Blackjack with friends",
+              textScaler: TextScaler.linear(2),
+            ),
+          ),
           if(isLoggedIn) Text("hello $username"),
           Row(
             children: <Widget>[
@@ -94,7 +100,7 @@ class _MainMenuState extends State<MainMenu> {
                         child: ElevatedButton(
                             style: AppDecorations.buttonStyle,
                             onPressed: (){
-                              Navigator.push(context, MaterialPageRoute(builder: (context)=>const BlackjackGame()));
+                              Navigator.push(context, MaterialPageRoute(builder: (context)=>const MenuForSelectingMode()));
                             },
                             child: Text("Start")
                         ),
