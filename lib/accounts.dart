@@ -28,15 +28,21 @@ class _AccountTabState extends State<AccountTab> {
   void _checkAuthState() {
 
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      setState(() {
-        _currentUser = user;
-      });
+      if(mounted){
+        setState(() {
+          _currentUser = user;
+        });
+      }
+
       if (user != null) {
         _loadUserChips();
       } else {
-        setState(() {
-          isLoadingChips = false;
-        });
+        if(mounted){
+          setState(() {
+            isLoadingChips = false;
+          });
+        }
+
       }
     });
   }
@@ -49,14 +55,19 @@ class _AccountTabState extends State<AccountTab> {
             .doc(_currentUser!.uid)
             .get();
 
-        setState(() {
-          userChips = doc.data()?['chips'] ?? 1000;
-          isLoadingChips = false;
-        });
+        if(mounted){
+          setState(() {
+            userChips = doc.data()?['chips'] ?? 1000;
+            isLoadingChips = false;
+          });
+        }
       } catch (e) {
-        setState(() {
-          isLoadingChips = false;
-        });
+        if(mounted){
+          setState(() {
+            isLoadingChips = false;
+          });
+        }
+
       }
     }
   }
@@ -104,7 +115,7 @@ class _AccountTabState extends State<AccountTab> {
             .set({
           'username': _usernameController.text.trim(),
           'email': _emailController.text.trim(),
-          'chips': 1000,
+          'current_chips': 1000,
           'createdAt': FieldValue.serverTimestamp(),
         });
 
@@ -296,9 +307,12 @@ class _AccountTabState extends State<AccountTab> {
                 SizedBox(height: 20),
                 TextButton(
                   onPressed: () {
-                    setState(() {
-                      _isRegistering = !_isRegistering;
-                    });
+                    if(mounted){
+                      setState(() {
+                        _isRegistering = !_isRegistering;
+                      });
+                    }
+
                   },
                   child: Text(
                     _isRegistering
@@ -316,7 +330,6 @@ class _AccountTabState extends State<AccountTab> {
 
   @override
   Widget build(BuildContext context) {
-    // Show different UI based on authentication state
     if (_currentUser != null) {
       return _buildLoggedInView();
     } else {

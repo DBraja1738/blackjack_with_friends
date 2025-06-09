@@ -166,6 +166,54 @@ class _DailyBonusSystemState extends State<DailyBonusSystem> {
 
   @override
   Widget build(BuildContext context) {
+    if (user == null) {
+      return Card(
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [Colors.grey.shade400, Colors.grey.shade600],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                color: Colors.white,
+                size: 48,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Login Required',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Please login to access daily bonuses',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isLoading) {
       return const Card(
         child: Padding(
