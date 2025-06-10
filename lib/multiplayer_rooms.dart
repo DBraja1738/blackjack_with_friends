@@ -1,3 +1,4 @@
+import 'package:blackjack_with_friends/multiplayer_blackjack_screen.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'classes/tcp_sink.dart';
@@ -59,7 +60,7 @@ class _RoomScreenState extends State<RoomScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => Placeholder()
+        builder: (context) => MultiplayerBlackjackScreen(channel: widget.channel, roomName: roomName)
       ),
     ).then((_) {
       // Refresh
