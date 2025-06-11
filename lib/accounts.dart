@@ -57,7 +57,7 @@ class _AccountTabState extends State<AccountTab> {
 
         if(mounted){
           setState(() {
-            userChips = doc.data()?['chips'] ?? 1000;
+            userChips = doc.data()?['current_chips'] ?? 1000;
             isLoadingChips = false;
           });
         }

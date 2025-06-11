@@ -99,7 +99,10 @@ class TcpServerForWidget {
           joinRoom(client, data['room']);
           break;
 
-      // Add game-specific message handlers
+        case "leave":
+          handleLeaveRoom(client);
+          break;
+
         case 'ready':
           handlePlayerReady(client);
           break;
@@ -151,7 +154,6 @@ class TcpServerForWidget {
       return;
     }
 
-    // Create GameRoom instead of regular Room
     rooms[roomName] = GameRoom(roomName);
 
     sendToClient(client, {
@@ -192,7 +194,6 @@ class TcpServerForWidget {
     // Initialize player state for GameRoom
     room.playerStates[client.id] ??= PlayerState();
 
-    // Send current game state to the joining player
     if (room.gameState != null) {
       broadcastGameState(room);
     }
@@ -582,6 +583,28 @@ class TcpServerForWidget {
   void broadcastToRoom(GameRoom room, Map<String, dynamic> message) {
     for (var client in room.clients) {
       sendToClient(client, message);
+    }
+  }
+
+  void handleLeaveRoom(Client client) {
+    if (client.currentRoom != null) {
+      String roomName = client.currentRoom!;
+      leaveRoom(client);
+
+      sendToClient(client, {
+        "type": "status",
+        "message": "left room $roomName"
+      });
+
+      // Notify other players in the room
+      GameRoom? room = rooms[roomName];
+      if (room != null) {
+        broadcastToRoom(room, {
+          'type': 'player_left',
+          'playerId': client.id,
+          'playersRemaining': room.clients.length,
+        });
+      }
     }
   }
 }

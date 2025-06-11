@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'classes/game_models.dart';
 import 'classes/tcp_sink.dart';
-import "classes/game_models.dart";
 
 class MultiplayerBlackjackScreen extends StatefulWidget {
   final TCPChannel channel;
@@ -17,16 +17,31 @@ class MultiplayerBlackjackScreen extends StatefulWidget {
   State<MultiplayerBlackjackScreen> createState() => _MultiplayerBlackjackScreenState();
 }
 
-class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen> {
+class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
+    with SingleTickerProviderStateMixin {
   Map<String, dynamic> gameState = {};
   String myId = "";
   bool isMyTurn = false;
   String gamePhase = "waiting";
   int betAmount = 50;
 
+  // Waiting room state
+  int readyCount = 0;
+  int totalPlayers = 0;
+  bool isReady = false;
+  Map<String, bool> playerReadyStatus = {};
+
+  // Animation controller for card dealing
+  late AnimationController _animationController;
+
   @override
   void initState() {
     super.initState();
+
+    _animationController = AnimationController(
+      duration: Duration(milliseconds: 500),
+      vsync: this,
+    );
 
     widget.channel.stream.listen((message) {
       final data = jsonDecode(message);
@@ -39,17 +54,28 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
             isMyTurn = data['currentPlayer'] == myId;
             gamePhase = data['phase'] ?? 'waiting';
           });
+          if (gamePhase == 'dealing') {
+            _animationController.forward();
+          }
           break;
 
         case 'player_ready':
-          _showSnackBar('${data['readyCount']}/${data['totalPlayers']} players ready');
+          setState(() {
+            readyCount = data['readyCount'];
+            totalPlayers = data['totalPlayers'];
+            playerReadyStatus[data['playerId']] = true;
+          });
           break;
 
         case 'betting_phase_start':
           setState(() {
             gamePhase = 'betting';
           });
-          _showSnackBar('Place your bets!');
+          _showNotification('Place your bets!', Colors.amber);
+          break;
+
+        case 'bet_placed':
+          _showNotification('Player ${data['playerId']} bet ${data['amount']} chips', Colors.blue);
           break;
 
         case 'game_over':
@@ -60,22 +86,64 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
           setState(() {
             gameState = {};
             gamePhase = 'waiting';
+            isReady = false;
+            playerReadyStatus.clear();
+            readyCount = 0;
           });
           break;
 
         case 'error':
-          _showSnackBar(data['message'], isError: true);
+          _showNotification(data['message'], Colors.red);
+          break;
+
+        case 'status':
+          if (data['message'].contains('joined room')) {
+            setState(() {
+              totalPlayers = (totalPlayers + 1).clamp(0, 3);
+            });
+          }
+          break;
+
+        case 'player_left':
+          setState(() {
+            totalPlayers = data['playersRemaining'] ?? 0;
+            playerReadyStatus.remove(data['playerId']);
+            readyCount = playerReadyStatus.values.where((ready) => ready).length;
+          });
+          _showNotification('A player left the room', Colors.orange);
           break;
       }
     });
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  @override
+  void dispose() {
+    // Leave room when disposing
+    _leaveRoom();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _leaveRoom() {
+    // Send leave message to server
+    widget.channel.sink.add(jsonEncode({
+      'type': 'leave',
+      'room': widget.roomName,
+    }));
+  }
+
+  void _showNotification(String message, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : null,
+        backgroundColor: color,
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
       ),
     );
   }
@@ -86,49 +154,126 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Game Over'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Dealer: ${data['dealerBust'] ? 'BUST' : data['dealerValue']}'),
-            SizedBox(height: 20),
-            Text(
-              myResult['outcome'] == 'won' ? 'You Won!' :
-              myResult['outcome'] == 'push' ? 'Push!' : 'You Lost',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: myResult['outcome'] == 'won' ? Colors.green :
-                myResult['outcome'] == 'push' ? Colors.orange : Colors.red,
-              ),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                myResult['outcome'] == 'won' ? Colors.green[700]! :
+                myResult['outcome'] == 'push' ? Colors.orange[700]! : Colors.red[700]!,
+                Colors.black87,
+              ],
             ),
-            if (myResult['winnings'] > 0)
-              Text('Winnings: ${myResult['winnings']} chips'),
-            Text('Total Chips: ${myResult['finalChips']}'),
-          ],
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white24,
+              width: 2,
+            ),
+          ),
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                myResult['outcome'] == 'won' ? Icons.celebration :
+                myResult['outcome'] == 'push' ? Icons.handshake : Icons.sentiment_dissatisfied,
+                size: 64,
+                color: Colors.white,
+              ),
+              SizedBox(height: 16),
+              Text(
+                myResult['outcome'] == 'won' ? 'VICTORY!' :
+                myResult['outcome'] == 'push' ? 'PUSH!' : 'DEFEAT',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 2,
+                ),
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Dealer: ${data['dealerBust'] ? 'BUST' : data['dealerValue']}',
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                    SizedBox(height: 8),
+                    if (myResult['winnings'] > 0)
+                      Text(
+                        '+${myResult['winnings']} chips',
+                        style: TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.casino, color: Colors.amber, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          '${myResult['finalChips']} chips',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _sendReady();
+                    },
+                    icon: Icon(Icons.refresh),
+                    label: Text('Play Again'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.pop(context);
+                    },
+                    icon: Icon(Icons.exit_to_app),
+                    label: Text('Leave'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(color: Colors.white54),
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _sendReady();
-            },
-            child: Text('Play Again'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context); // Leave room
-            },
-            child: Text('Leave Room'),
-          ),
-        ],
       ),
     );
   }
 
   void _sendReady() {
+    setState(() {
+      isReady = true;
+    });
     widget.channel.sink.add(jsonEncode({'type': 'ready'}));
   }
 
@@ -137,6 +282,9 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
       'type': 'bet',
       'amount': betAmount,
     }));
+    setState(() {
+      gamePhase = 'waiting_for_bets';
+    });
   }
 
   void _hit() {
@@ -153,20 +301,75 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Blackjack - $widget.roomName'),
-        backgroundColor: Colors.green[800],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.green[800]!, Colors.green[600]!],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if(didPop) result;
+        _showExitConfirmation();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.green[900],
+        appBar: AppBar(
+          title: Text('Blackjack - ${widget.roomName}'),
+          backgroundColor: Colors.green[800],
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () => _showExitConfirmation(),
           ),
+          actions: [
+            if (gamePhase != 'waiting')
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Center(
+                  child: Text(
+                    'Room: ${widget.roomName}',
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ),
+              ),
+          ],
         ),
-        child: _buildGameContent(),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.green[800]!, Colors.green[900]!],
+            ),
+          ),
+          child: _buildGameContent(),
+        ),
+      ),
+    );
+  }
+
+  void _showExitConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Leave Game?'),
+        content: Text(
+            gamePhase != 'waiting' && gamePhase != 'finished'
+                ? 'You\'re in the middle of a game. Are you sure you want to leave?'
+                : 'Are you sure you want to leave the room?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Leave screen
+            },
+            child: Text(
+              'Leave',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -174,7 +377,7 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
   Widget _buildGameContent() {
     if (gamePhase == 'waiting') {
       return _buildWaitingRoom();
-    } else if (gamePhase == 'betting') {
+    } else if (gamePhase == 'betting' || gamePhase == 'waiting_for_bets') {
       return _buildBettingPhase();
     } else {
       return _buildGameTable();
@@ -183,88 +386,234 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
 
   Widget _buildWaitingRoom() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Colors.white),
-          SizedBox(height: 20),
-          Text(
-            'Waiting for players...',
-            style: TextStyle(color: Colors.white, fontSize: 20),
+      child: Container(
+        constraints: BoxConstraints(maxWidth: 400),
+        margin: EdgeInsets.all(20),
+        child: Card(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _sendReady,
-            child: Text('Ready'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.casino,
+                  size: 64,
+                  color: Colors.green[700],
+                ),
+                SizedBox(height: 24),
+                Text(
+                  'Waiting for Players',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 16),
+                LinearProgressIndicator(
+                  value: totalPlayers > 0 ? readyCount / totalPlayers : 0,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: AlwaysStoppedAnimation(Colors.green),
+                  minHeight: 8,
+                ),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Text(
+                    '$readyCount / $totalPlayers Players Ready',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 24),
+                // Player list
+                if (totalPlayers > 0)
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        for (int i = 0; i < totalPlayers; i++)
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.person,
+                                  color: i < readyCount ? Colors.green : Colors.grey,
+                                ),
+                                SizedBox(width: 8),
+                                Text('Player ${i + 1}'),
+                                Spacer(),
+                                if (i < readyCount)
+                                  Icon(Icons.check_circle, color: Colors.green, size: 20),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                SizedBox(height: 24),
+                AnimatedContainer(
+                  duration: Duration(milliseconds: 300),
+                  child: ElevatedButton(
+                    onPressed: isReady ? null : _sendReady,
+                    child: Text(isReady ? 'Waiting for others...' : 'Ready to Play'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isReady ? Colors.grey : Colors.green,
+                      padding: EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                      textStyle: TextStyle(fontSize: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                  ),
+                ),
+                if (totalPlayers < 2)
+                  Padding(
+                    padding: EdgeInsets.only(top: 16),
+                    child: Text(
+                      'Need at least 2 players to start',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildBettingPhase() {
     var myState = gameState['players']?[myId];
+    bool hasBet = gamePhase == 'waiting_for_bets';
 
     return Center(
-      child: Card(
+      child: Container(
+        constraints: BoxConstraints(maxWidth: 400),
         margin: EdgeInsets.all(20),
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Place Your Bet', style: TextStyle(fontSize: 24)),
-              SizedBox(height: 20),
-              Text('Your Chips: ${myState?['chips'] ?? 0}'),
-              SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        betAmount = (betAmount - 10).clamp(10, 500);
-                      });
-                    },
-                    icon: Icon(Icons.remove_circle),
+        child: Card(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.monetization_on,
+                  size: 48,
+                  color: Colors.amber[700],
+                ),
+                SizedBox(height: 16),
+                Text(
+                  hasBet ? 'Waiting for other players...' : 'Place Your Bet',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 24),
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  Container(
-                    width: 100,
-                    padding: EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$betAmount',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.casino, color: Colors.amber),
+                      SizedBox(width: 8),
+                      Text(
+                        'Your Chips: ${myState?['chips'] ?? 1000}',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!hasBet) ...[
+                  SizedBox(height: 24),
+                  Text('Bet Amount', style: TextStyle(fontSize: 16)),
+                  SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            betAmount = (betAmount - 10).clamp(10, 500);
+                          });
+                        },
+                        icon: Icon(Icons.remove_circle, size: 36),
+                        color: Colors.red,
+                      ),
+                      Container(
+                        width: 120,
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.green, width: 2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$betAmount',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            betAmount = (betAmount + 10).clamp(10,
+                                (myState?['chips'] ?? 500).clamp(0, 500)).toInt();
+                          });
+                        },
+                        icon: Icon(Icons.add_circle, size: 36),
+                        color: Colors.green,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Min: 10 | Max: 500',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                  SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _placeBet,
+                    child: Text('Place Bet'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                      textStyle: TextStyle(fontSize: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        betAmount = (betAmount + 10).clamp(10,
-                            (myState?['chips'] ?? 500).clamp(0, 500)).toInt();
-                      });
-                    },
-                    icon: Icon(Icons.add_circle),
+                ] else ...[
+                  SizedBox(height: 24),
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Your bet: $betAmount chips',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                   ),
                 ],
-              ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _placeBet,
-                child: Text('Place Bet'),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -274,6 +623,23 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
   Widget _buildGameTable() {
     return Column(
       children: [
+        // Game phase indicator
+        if (gamePhase == 'dealerTurn')
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            color: Colors.amber[700],
+            child: Center(
+              child: Text(
+                'Dealer\'s Turn',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
         // Dealer section
         _buildDealerSection(),
 
@@ -293,35 +659,73 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
     var dealerHand = gameState['dealerHand'] ?? [];
     var dealerValue = gameState['dealerValue'];
 
-    return Card(
+    return Container(
       margin: EdgeInsets.all(16),
-      color: Colors.green[700],
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(
-              'Dealer',
-              style: TextStyle(color: Colors.white, fontSize: 20),
-            ),
-            if (dealerValue != null)
-              Text(
-                'Value: $dealerValue',
-                style: TextStyle(color: Colors.white70),
-              ),
-            SizedBox(height: 10),
-            SizedBox(
-              height: 100,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var cardData in dealerHand)
-                    _buildCard(cardData),
-                ],
-              ),
-            ),
-          ],
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.green[700]!, Colors.green[800]!],
         ),
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person, color: Colors.white, size: 24),
+              SizedBox(width: 8),
+              Text(
+                'Dealer',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (dealerValue != null) ...[
+                SizedBox(width: 16),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Value: $dealerValue',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          SizedBox(height: 16),
+          SizedBox(
+            height: 100,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (int i = 0; i < dealerHand.length; i++)
+                  AnimatedBuilder(
+                    animation: _animationController,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, _animationController.value * -10),
+                        child: _buildCard(dealerHand[i]),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -342,10 +746,30 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
     bool isMe = playerId == myId;
     bool isCurrentPlayer = gameState['currentPlayer'] == playerId;
 
-    return Card(
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300),
       margin: EdgeInsets.symmetric(vertical: 8),
-      color: isCurrentPlayer ? Colors.amber[100] :
-      isMe ? Colors.blue[100] : null,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isCurrentPlayer
+              ? [Colors.amber[100]!, Colors.amber[50]!]
+              : isMe
+              ? [Colors.blue[100]!, Colors.blue[50]!]
+              : [Colors.white, Colors.grey[50]!],
+        ),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: isCurrentPlayer ? Colors.amber : Colors.transparent,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isCurrentPlayer ? Colors.amber.withOpacity(0.3) : Colors.black12,
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: EdgeInsets.all(16),
         child: Column(
@@ -354,40 +778,117 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isMe ? 'You' : 'Player $playerId',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: isMe ? Colors.blue : Colors.grey,
+                      radius: 20,
+                      child: Text(
+                        isMe ? 'YOU' : 'P${playerId.substring(playerId.length - 1)}',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isMe ? 'You' : 'Player ${playerId.substring(playerId.length - 1)}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (isCurrentPlayer)
+                          Text(
+                            'Playing...',
+                            style: TextStyle(
+                              color: Colors.amber[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('Chips: ${playerData['chips']}'),
-                    Text('Bet: ${playerData['currentBet']}'),
+                    Row(
+                      children: [
+                        Icon(Icons.casino, size: 16, color: Colors.amber),
+                        SizedBox(width: 4),
+                        Text(
+                          '${playerData['chips']}',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      'Bet: ${playerData['currentBet']}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
                   ],
                 ),
               ],
             ),
-            SizedBox(height: 10),
+            SizedBox(height: 12),
             Row(
               children: [
-                Text('Hand: ${playerData['handValue']}'),
-                SizedBox(width: 10),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Hand: ${playerData['handValue']}',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(width: 8),
                 if (playerData['isBlackjack'])
-                  Chip(
-                    label: Text('BLACKJACK!'),
-                    backgroundColor: Colors.amber,
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.amber, Colors.orange],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'BLACKJACK!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 if (playerData['hasBusted'])
-                  Chip(
-                    label: Text('BUST'),
-                    backgroundColor: Colors.red,
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'BUST',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
               ],
             ),
-            SizedBox(height: 10),
+            SizedBox(height: 12),
             SizedBox(
               height: 100,
               child: Row(
@@ -418,10 +919,23 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
     return Container(
       width: 70,
       height: 100,
-      margin: EdgeInsets.symmetric(horizontal: 4),
-      child: Image.asset(
-        card.imagePath,
-        fit: BoxFit.contain,
+      margin: EdgeInsets.only(right: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(2, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.asset(
+          card.imagePath,
+          fit: BoxFit.contain,
+        ),
       ),
     );
   }
@@ -433,33 +947,88 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
         myState['chips'] >= myState['currentBet'];
 
     return Container(
-      padding: EdgeInsets.all(16),
-      color: Colors.green[900],
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          ElevatedButton(
-            onPressed: _hit,
-            child: Text('HIT'),
-            style: ElevatedButton.styleFrom(
-              padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-            ),
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.green[900],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 8,
+            offset: Offset(0, -4),
           ),
-          ElevatedButton(
-            onPressed: _stand,
-            child: Text('STAND'),
-            style: ElevatedButton.styleFrom(
-              padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-            ),
-          ),
-          if (canDoubleDown)
-            ElevatedButton(
-              onPressed: _doubleDown,
-              child: Text('DOUBLE'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Text(
+              'Your Turn',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
             ),
+            SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildActionButton(
+                  onPressed: _hit,
+                  label: 'HIT',
+                  icon: Icons.add_circle,
+                  color: Colors.blue,
+                ),
+                _buildActionButton(
+                  onPressed: _stand,
+                  label: 'STAND',
+                  icon: Icons.pan_tool,
+                  color: Colors.orange,
+                ),
+                if (canDoubleDown)
+                  _buildActionButton(
+                    onPressed: _doubleDown,
+                    label: 'DOUBLE',
+                    icon: Icons.exposure_plus_2,
+                    color: Colors.purple,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback onPressed,
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 4,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24),
+          SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );

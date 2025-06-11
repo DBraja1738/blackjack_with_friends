@@ -15,6 +15,7 @@ class RoomScreen extends StatefulWidget {
 class _RoomScreenState extends State<RoomScreen> {
   List<dynamic> rooms = [];
   bool isLoading = true;
+  String? currentRoom;
 
   @override
   void initState() {
@@ -33,15 +34,31 @@ class _RoomScreenState extends State<RoomScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(data['message'])),
           );
+
+          // If successfully joined a room, navigate to game
+          if (data['message'].startsWith('joined room')) {
+            String roomName = data['message'].substring('joined room '.length);
+            navigateToGame(roomName);
+          }
         }
       } else if (data["type"] == "room_created") {
-
         fetchRooms();
       }
     });
 
-
     fetchRooms();
+  }
+
+  @override
+  void dispose() {
+    // If in a room, leave it
+    if (currentRoom != null) {
+      widget.channel.sink.add(jsonEncode({
+        "type": "leave",
+        "room": currentRoom,
+      }));
+    }
+    super.dispose();
   }
 
   void fetchRooms() {
@@ -51,19 +68,31 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   void joinRoom(String roomName) {
+    setState(() {
+      currentRoom = roomName;
+    });
+
     widget.channel.sink.add(jsonEncode({
       "type": "join",
       "room": roomName,
     }));
+  }
 
-
+  void navigateToGame(String roomName) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => MultiplayerBlackjackScreen(channel: widget.channel, roomName: roomName)
+        builder: (context) => MultiplayerBlackjackScreen(
+          channel: widget.channel,
+          roomName: roomName,
+        ),
       ),
     ).then((_) {
-      // Refresh
+      // User returned from game
+      setState(() {
+        currentRoom = null;
+      });
+      // Refresh room list
       fetchRooms();
     });
   }
@@ -103,75 +132,122 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Chat Rooms'),
+  void disconnect() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Disconnect from server?'),
+        content: Text('You will be disconnected from the game server.'),
         actions: [
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: createRoom,
-            tooltip: 'Create Room',
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
           ),
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: fetchRooms,
-            tooltip: 'Refresh',
+          TextButton(
+            onPressed: () {
+              // Close the channel
+              widget.channel.close();
+
+              // Pop both the dialog and this screen
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Go back to IP input screen
+            },
+            child: Text(
+              'Disconnect',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : rooms.isEmpty
-          ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text("No rooms available", style: TextStyle(fontSize: 18)),
-            SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: createRoom,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result){
+        if(didPop) return;
+        disconnect();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Chat Rooms'),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: disconnect,
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.logout),
+              onPressed: disconnect,
+              tooltip: 'Disconnect',
+              color: Colors.red,
+            ),
+            IconButton(
               icon: Icon(Icons.add),
-              label: Text('Create First Room'),
+              onPressed: createRoom,
+              tooltip: 'Create Room',
+            ),
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: fetchRooms,
+              tooltip: 'Refresh',
             ),
           ],
         ),
-      )
-          : RefreshIndicator(
-        onRefresh: () async => fetchRooms(),
-        child: ListView.builder(
-          itemCount: rooms.length,
-          itemBuilder: (context, index) {
-            final room = rooms[index];
-            final isFull = room["occupancy"] >= room["capacity"];
+        body: isLoading
+            ? Center(child: CircularProgressIndicator())
+            : rooms.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text("No rooms available", style: TextStyle(fontSize: 18)),
+                      SizedBox(height: 16),
+                      ElevatedButton.icon(
+                      onPressed: createRoom,
+                        icon: Icon(Icons.add),
+                        label: Text('Create First Room'),
+                      ),
+                    ],
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: () async => fetchRooms(),
+                child: ListView.builder(
+                itemCount: rooms.length,
+                itemBuilder: (context, index) {
+                    final room = rooms[index];
+                    final isFull = room["occupancy"] >= room["capacity"];
 
-            return Card(
-              margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isFull ? Colors.red : Colors.green,
-                  child: Icon(
-                    isFull ? Icons.block : Icons.chat,
-                    color: Colors.white,
+                    return Card(
+                      margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: ListTile(
+                           leading: CircleAvatar(
+                           backgroundColor: isFull ? Colors.red : Colors.green,
+                            child: Icon(
+                            isFull ? Icons.block : Icons.chat,
+                            color: Colors.white,
+                            ),
+                           ),
+                        title: Text(room["name"]),
+                        subtitle: Text("${room["occupancy"]}/${room["capacity"]} users"),
+                        trailing: isFull
+                        ? Chip(
+                          label: Text("FULL"),
+                          backgroundColor: Colors.red.shade100,
+                          )
+                        : ElevatedButton(
+                          onPressed: () => joinRoom(room["name"]),
+                          child: Text("Join"),
                   ),
                 ),
-                title: Text(room["name"]),
-                subtitle: Text("${room["occupancy"]}/${room["capacity"]} users"),
-                trailing: isFull
-                    ? Chip(
-                  label: Text("FULL"),
-                  backgroundColor: Colors.red.shade100,
-                )
-                    : ElevatedButton(
-                  onPressed: () => joinRoom(room["name"]),
-                  child: Text("Join"),
-                ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
