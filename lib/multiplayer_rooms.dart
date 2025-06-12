@@ -15,6 +15,7 @@ class RoomScreen extends StatefulWidget {
 }
 
 class _RoomScreenState extends State<RoomScreen> {
+  String username = "";
   List<dynamic> rooms = [];
   bool isLoading = true;
   String? currentRoom;
@@ -24,8 +25,9 @@ class _RoomScreenState extends State<RoomScreen> {
   void initState() {
     super.initState();
 
-    // Load player chips first
+
     _loadPlayerChips();
+    getPlayerUsername();
 
     widget.channel.stream.listen((message) {
       final data = jsonDecode(message);
@@ -55,6 +57,23 @@ class _RoomScreenState extends State<RoomScreen> {
     fetchRooms();
   }
 
+  void getPlayerUsername() async{
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    try {
+      DocumentSnapshot snapshot = await firestore
+          .collection("users")
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .get();
+
+      var userData = snapshot.data() as Map<String, dynamic>;
+
+      username = userData["username"] ?? "";
+      print(username);
+      setState(() {});
+    } catch (e) {
+      print("failed to fetch user $e");
+    }
+  }
   Future<void> _loadPlayerChips() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -102,7 +121,8 @@ class _RoomScreenState extends State<RoomScreen> {
     widget.channel.sink.add(jsonEncode({
       "type": "join",
       "room": roomName,
-      "chips": playerChips,  // Include player's actual chips
+      "chips": playerChips,
+      "username": username,
     }));
   }
 

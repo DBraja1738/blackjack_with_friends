@@ -96,7 +96,7 @@ class TcpServerForWidget {
           break;
 
         case 'join':
-          joinRoom(client, data['room'], data["chips"]);
+          joinRoom(client, data['room'], data["chips"] ?? 10 ,data["username"] ?? "Player");
           break;
 
         case "leave":
@@ -162,7 +162,7 @@ class TcpServerForWidget {
     });
   }
 
-  void joinRoom(Client client, String? roomName, int chips) {
+  void joinRoom(Client client, String? roomName, int chips, String username) {
     if (roomName == null || !rooms.containsKey(roomName)) {
       sendToClient(client, {
         "type": "status",
@@ -193,6 +193,7 @@ class TcpServerForWidget {
 
     // Initialize player state for GameRoom
     room.playerStates[client.id] ??= PlayerState(chips: chips);
+    room.playerStates[client.id]!.username = username;
 
     if (room.gameState != null) {
       broadcastGameState(room);

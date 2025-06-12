@@ -822,24 +822,11 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: isMe ? Colors.blue : Colors.grey,
-                      radius: 20,
-                      child: Text(
-                        isMe ? 'YOU' : 'P${playerId.substring(playerId.length - 1)}',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isMe ? 'You' : 'Player ${playerId.substring(playerId.length - 1)}',
+                          isMe ? 'You' : (playerData["username"] ?? "Player"),
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,

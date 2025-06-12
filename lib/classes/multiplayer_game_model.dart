@@ -37,6 +37,7 @@ class PlayerState {
   bool hasStood = false;
   bool hasBusted = false;
   bool hasDoubledDown = false;
+  String username = "Player";
 
   PlayerState({this.chips = 1000});
 
@@ -54,6 +55,7 @@ class PlayerState {
       'hasStood': hasStood,
       'hasBusted': hand.isBust,
       'isBlackjack': hand.isBlackjack,
+      "username": username
     };
   }
 }
