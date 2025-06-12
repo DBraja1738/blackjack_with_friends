@@ -1,7 +1,9 @@
-import 'package:blackjack_with_friends/multiplayer_blackjack_screen.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'classes/tcp_sink.dart';
+import 'multiplayer_blackjack_screen.dart';
 
 class RoomScreen extends StatefulWidget {
   final TCPChannel channel;
@@ -16,10 +18,14 @@ class _RoomScreenState extends State<RoomScreen> {
   List<dynamic> rooms = [];
   bool isLoading = true;
   String? currentRoom;
+  int playerChips = 1000;
 
   @override
   void initState() {
     super.initState();
+
+    // Load player chips first
+    _loadPlayerChips();
 
     widget.channel.stream.listen((message) {
       final data = jsonDecode(message);
@@ -49,6 +55,26 @@ class _RoomScreenState extends State<RoomScreen> {
     fetchRooms();
   }
 
+  Future<void> _loadPlayerChips() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection("users")
+            .doc(user.uid)
+            .get();
+
+        if (doc.exists) {
+          setState(() {
+            playerChips = doc.data()?["current_chips"] ?? 1000;
+          });
+        }
+      } catch (e) {
+        print('Error loading player chips: $e');
+      }
+    }
+  }
+
   @override
   void dispose() {
     // If in a room, leave it
@@ -72,9 +98,11 @@ class _RoomScreenState extends State<RoomScreen> {
       currentRoom = roomName;
     });
 
+    // Send chips info when joining
     widget.channel.sink.add(jsonEncode({
       "type": "join",
       "room": roomName,
+      "chips": playerChips,  // Include player's actual chips
     }));
   }
 
@@ -92,8 +120,9 @@ class _RoomScreenState extends State<RoomScreen> {
       setState(() {
         currentRoom = null;
       });
-      // Refresh room list
+      // Refresh room list and reload chips
       fetchRooms();
+      _loadPlayerChips();
     });
   }
 
@@ -132,7 +161,7 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
-  void disconnect() {
+  void _disconnect() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -166,21 +195,30 @@ class _RoomScreenState extends State<RoomScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result){
-        if(didPop) return;
-        disconnect();
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop) return;
+        _disconnect();
       },
       child: Scaffold(
         appBar: AppBar(
           title: Text('Chat Rooms'),
           leading: IconButton(
             icon: Icon(Icons.arrow_back),
-            onPressed: disconnect,
+            onPressed: _disconnect,
           ),
           actions: [
+            // Show player chips
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Chip(
+                avatar: Icon(Icons.casino, size: 18),
+                label: Text('$playerChips chips'),
+                backgroundColor: Colors.amber[700],
+              ),
+            ),
             IconButton(
               icon: Icon(Icons.logout),
-              onPressed: disconnect,
+              onPressed: _disconnect,
               tooltip: 'Disconnect',
               color: Colors.red,
             ),
@@ -191,7 +229,10 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
             IconButton(
               icon: Icon(Icons.refresh),
-              onPressed: fetchRooms,
+              onPressed: () {
+                fetchRooms();
+                _loadPlayerChips();
+              },
               tooltip: 'Refresh',
             ),
           ],
@@ -200,49 +241,52 @@ class _RoomScreenState extends State<RoomScreen> {
             ? Center(child: CircularProgressIndicator())
             : rooms.isEmpty
             ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text("No rooms available", style: TextStyle(fontSize: 18)),
-                      SizedBox(height: 16),
-                      ElevatedButton.icon(
-                      onPressed: createRoom,
-                        icon: Icon(Icons.add),
-                        label: Text('Create First Room'),
-                      ),
-                    ],
-                ),
-              )
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text("No rooms available", style: TextStyle(fontSize: 18)),
+              SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: createRoom,
+                icon: Icon(Icons.add),
+                label: Text('Create First Room'),
+              ),
+            ],
+          ),
+        )
             : RefreshIndicator(
-                onRefresh: () async => fetchRooms(),
-                child: ListView.builder(
-                itemCount: rooms.length,
-                itemBuilder: (context, index) {
-                    final room = rooms[index];
-                    final isFull = room["occupancy"] >= room["capacity"];
+          onRefresh: () async {
+            fetchRooms();
+            await _loadPlayerChips();
+          },
+          child: ListView.builder(
+            itemCount: rooms.length,
+            itemBuilder: (context, index) {
+              final room = rooms[index];
+              final isFull = room["occupancy"] >= room["capacity"];
 
-                    return Card(
-                      margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: ListTile(
-                           leading: CircleAvatar(
-                           backgroundColor: isFull ? Colors.red : Colors.green,
-                            child: Icon(
-                            isFull ? Icons.block : Icons.chat,
-                            color: Colors.white,
-                            ),
-                           ),
-                        title: Text(room["name"]),
-                        subtitle: Text("${room["occupancy"]}/${room["capacity"]} users"),
-                        trailing: isFull
-                        ? Chip(
-                          label: Text("FULL"),
-                          backgroundColor: Colors.red.shade100,
-                          )
-                        : ElevatedButton(
-                          onPressed: () => joinRoom(room["name"]),
-                          child: Text("Join"),
+              return Card(
+                margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: isFull ? Colors.red : Colors.green,
+                    child: Icon(
+                      isFull ? Icons.block : Icons.chat,
+                      color: Colors.white,
+                    ),
+                  ),
+                  title: Text(room["name"]),
+                  subtitle: Text("${room["occupancy"]}/${room["capacity"]} users"),
+                  trailing: isFull
+                      ? Chip(
+                    label: Text("FULL"),
+                    backgroundColor: Colors.red.shade100,
+                  )
+                      : ElevatedButton(
+                    onPressed: () => joinRoom(room["name"]),
+                    child: Text("Join"),
                   ),
                 ),
               );

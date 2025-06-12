@@ -15,11 +15,11 @@ class Client {
 class TcpServerForWidget {
   ServerSocket? server;
   final Map<String, Client> clients = {};
-  final Map<String, GameRoom> rooms = {}; // Changed to GameRoom
+  final Map<String, GameRoom> rooms = {};
   int clientIdCounter = 0;
 
   TcpServerForWidget() {
-    // Create default room as GameRoom instead of regular Room
+
     rooms["General"] = GameRoom("General");
   }
 
@@ -96,7 +96,7 @@ class TcpServerForWidget {
           break;
 
         case 'join':
-          joinRoom(client, data['room']);
+          joinRoom(client, data['room'], data["chips"]);
           break;
 
         case "leave":
@@ -162,7 +162,7 @@ class TcpServerForWidget {
     });
   }
 
-  void joinRoom(Client client, String? roomName) {
+  void joinRoom(Client client, String? roomName, int chips) {
     if (roomName == null || !rooms.containsKey(roomName)) {
       sendToClient(client, {
         "type": "status",
@@ -192,7 +192,7 @@ class TcpServerForWidget {
     });
 
     // Initialize player state for GameRoom
-    room.playerStates[client.id] ??= PlayerState();
+    room.playerStates[client.id] ??= PlayerState(chips: chips);
 
     if (room.gameState != null) {
       broadcastGameState(room);
@@ -249,7 +249,6 @@ class TcpServerForWidget {
     });
   }
 
-  // Game-specific methods (copied from the extension)
   void handlePlayerReady(Client client) {
     if (client.currentRoom == null) return;
 

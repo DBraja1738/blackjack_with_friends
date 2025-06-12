@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-
 import 'widgets/decorations.dart';
 
 class MainApp extends StatelessWidget {
@@ -72,88 +71,93 @@ class _MainMenuState extends State<MainMenu> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: <Widget>[
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 100),
-            child: Text(
-              "Blackjack with friends",
-              textScaler: TextScaler.linear(2),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                // Title
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      "Blackjack with friends",
+                      style: TextStyle(fontSize: 48),
+                    ),
+                  ),
+                ),
+
+                if (isLoggedIn)
+                  Text("Hello $username"),
+
+                SizedBox(height: 20),
+
+                // Buttons
+                Container(
+                  constraints: BoxConstraints(maxWidth: 400),
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton(
+                          style: AppDecorations.buttonStyle,
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const MenuForSelectingMode(),
+                              ),
+                            );
+                          },
+                          child: Text("Start"),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton(
+                          style: AppDecorations.buttonStyleWhite,
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AccountTab(),
+                              ),
+                            );
+                            checkLoginStatus();
+                          },
+                          child: Text("Accounts"),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            exit(0);
+                          },
+                          style: AppDecorations.buttonStyleRed,
+                          child: Text("EXIT"),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: DailyBonusSystem(
+                          key: ValueKey(isLoggedIn),
+                          onBonusClaimed: () {
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          if (isLoggedIn) Text("hello $username"),
-          Row(
-            children: <Widget>[
-              Expanded(
-                flex: 2,
-                child: Container(color: Colors.green[600]),
-              ),
-              Expanded(
-                flex: 6,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ElevatedButton(
-                        style: AppDecorations.buttonStyle,
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const MenuForSelectingMode(),
-                            ),
-                          );
-                        },
-                        child: Text("Start"),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ElevatedButton(
-                        style: AppDecorations.buttonStyleWhite,
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AccountTab(),
-                            ),
-                          );
-                          checkLoginStatus();
-                        },
-                        child: Text("Accounts"),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ElevatedButton(
-                        onPressed: () {
-                          exit(0);
-                        },
-                        style: AppDecorations.buttonStyleRed,
-                        child: Text("EXIT"),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: DailyBonusSystem(
-                        key: ValueKey(isLoggedIn), // force rebuild when login status changes
-                        onBonusClaimed: () {
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Container(color: Colors.green),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
