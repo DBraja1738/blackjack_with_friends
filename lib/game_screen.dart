@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'classes/firestore_stats_manager.dart';
 import 'classes/game_models.dart';
 import 'widgets/decorations.dart';
 
@@ -23,6 +24,10 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   int currentBet = 0;
   bool isDealing = false;
 
+  // Add these for stats tracking
+  int chipsBeforeBet = 0;
+  bool roundStatsRecorded = false;
+
   @override
   void initState() {
     super.initState();
@@ -32,6 +37,9 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   void initializeGame() async {
     if (user != null) {
       try {
+        // Initialize stats if needed
+        await FirestoreStatsManager.initializePlayerStats();
+
         final doc = await FirebaseFirestore.instance
             .collection("users")
             .doc(user!.uid)
@@ -39,7 +47,9 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         setState(() {
           playerChips = doc.data()?["current_chips"] ?? 1000;
         });
-      } catch (e) {}
+      } catch (e) {
+        print('Error initializing game: $e');
+      }
     }
     deck = Deck();
     playerHand = Hand();
@@ -52,6 +62,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
       playerHand.clear();
       dealerHand.clear();
       deck.reset();
+      roundStatsRecorded = false; // Reset for new round
       dealInitialCards();
     });
   }
@@ -132,22 +143,53 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
   }
 
   void endRound() async {
+    // Determine outcome and winnings
+    String outcome = '';
+    int winnings = 0;
+
     setState(() {
       gameState = GameState.roundEnd;
 
       if (playerHand.isBust) {
+        outcome = 'lost';
+        winnings = 0;
       } else if (dealerHand.isBust) {
-        playerChips += currentBet * 2;
+        outcome = 'won';
+        winnings = currentBet * 2;
+        playerChips += winnings;
       } else if (playerHand.isBlackjack && !dealerHand.isBlackjack) {
-        playerChips += (currentBet * 2.5).round();
+        outcome = 'won';
+        winnings = (currentBet * 2.5).round();
+        playerChips += winnings;
       } else if (playerHand.value > dealerHand.value) {
-        playerChips += currentBet * 2;
+        outcome = 'won';
+        winnings = currentBet * 2;
+        playerChips += winnings;
       } else if (playerHand.value == dealerHand.value) {
-        playerChips += currentBet;
+        outcome = 'push';
+        winnings = currentBet;
+        playerChips += winnings;
+      } else {
+        outcome = 'lost';
+        winnings = 0;
       }
     });
 
-    if (user != null) {
+    // Update Firestore stats only once per round
+    if (!roundStatsRecorded && user != null) {
+      roundStatsRecorded = true;
+
+      // Update player stats
+      await FirestoreStatsManager.updateGameResult(
+        outcome: outcome,
+        betAmount: currentBet,
+        winnings: winnings,
+        finalChips: playerChips,
+        hadBlackjack: playerHand.isBlackjack,
+        busted: playerHand.isBust,
+      );
+
+      // Update current chips
       await FirebaseFirestore.instance
           .collection("users")
           .doc(user!.uid)
@@ -159,6 +201,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
     if (amount <= playerChips) {
       setState(() {
         currentBet = amount;
+        chipsBeforeBet = playerChips; // Track chips before bet
         playerChips -= amount;
         startNewRound();
       });
@@ -230,13 +273,25 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
             if (gameState == GameState.roundEnd)
               Container(
                 padding: const EdgeInsets.all(20),
-                child: Text(
-                  getResultMessage(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: Column(
+                  children: [
+                    Text(
+                      getResultMessage(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (currentBet > 0)
+                      Text(
+                        _getChipsChangeMessage(),
+                        style: TextStyle(
+                          color: _getChipsChangeColor(),
+                          fontSize: 16,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             Expanded(
@@ -257,6 +312,29 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         ),
       ),
     );
+  }
+
+  String _getChipsChangeMessage() {
+    String outcome = getResultMessage();
+    if (outcome.contains("win")) {
+      int profit = playerChips - chipsBeforeBet;
+      return '+$profit chips';
+    } else if (outcome.contains("Push")) {
+      return '±0 chips';
+    } else {
+      return '-$currentBet chips';
+    }
+  }
+
+  Color _getChipsChangeColor() {
+    String outcome = getResultMessage();
+    if (outcome.contains("win")) {
+      return Colors.green[300]!;
+    } else if (outcome.contains("Push")) {
+      return Colors.yellow[300]!;
+    } else {
+      return Colors.red[300]!;
+    }
   }
 
   Widget buildHand(Hand hand) {
@@ -384,6 +462,7 @@ class _BlackjackGameState extends State<BlackjackGame> with TickerProviderStateM
         onPressed: () {
           setState(() {
             gameState = GameState.betting;
+            currentBet = 0; // Reset bet for new round
           });
         },
         child: const Text('NEW ROUND'),
