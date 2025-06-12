@@ -1,3 +1,5 @@
+
+import 'package:blackjack_with_friends/stats_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -206,6 +208,20 @@ class _AccountTabState extends State<AccountTab> {
                   ),
                 ),
               ),
+
+              SizedBox(height: 40),
+              ElevatedButton.icon(
+                onPressed: (){
+                  Navigator.push(context, MaterialPageRoute(builder: (context)=> const PlayerStatsScreen()));
+                },
+                icon: Icon(Icons.logout),
+                label: Text("See stats"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.yellow[300],
+                  padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                ),
+              ),
+
               SizedBox(height: 40),
               ElevatedButton.icon(
                 onPressed: _logout,

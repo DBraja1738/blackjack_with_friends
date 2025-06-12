@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'classes/firestore_stats_manager.dart';
 import 'classes/game_models.dart';
 import 'classes/tcp_sink.dart';
 
@@ -43,6 +44,9 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
       vsync: this,
     );
 
+    // Initialize Firestore stats
+    FirestoreStatsManager.initializePlayerStats();
+
     widget.channel.stream.listen((message) {
       final data = jsonDecode(message);
 
@@ -79,6 +83,7 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
           break;
 
         case 'game_over':
+          _updateFirestoreStats(data);
           _showGameOverDialog(data);
           break;
 
@@ -146,6 +151,26 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
         ),
       ),
     );
+  }
+
+  void _updateFirestoreStats(Map<String, dynamic> data) async {
+    try {
+      var myResult = data['results'][myId];
+      var myState = gameState['players']?[myId];
+
+      if (myResult != null && myState != null) {
+        await FirestoreStatsManager.updateGameResult(
+          outcome: myResult['outcome'],
+          betAmount: myState['currentBet'] ?? 0,
+          winnings: myResult['winnings'] ?? 0,
+          finalChips: myResult['finalChips'] ?? 0,
+          hadBlackjack: myState['isBlackjack'] ?? false,
+          busted: myState['hasBusted'] ?? false,
+        );
+      }
+    } catch (e) {
+      print('Error updating Firestore stats: $e');
+    }
   }
 
   void _showGameOverDialog(Map<String, dynamic> data) {
@@ -303,8 +328,9 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) async {
-        if(didPop) result;
+      onPopInvokedWithResult: (bool didPop, dynamic result){
+        if(didPop) return;
+
         _showExitConfirmation();
       },
       child: Scaffold(
