@@ -255,9 +255,10 @@ class TcpServerForWidget {
     GameRoom? room = rooms[client.currentRoom] as GameRoom?;
     if (room == null) return;
 
-    // Initialize player state if needed
-    room.playerStates[client.id] ??= PlayerState();
-    room.playerStates[client.id]!.isReady = true;
+
+    if(room.playerStates[client.id] != null){
+      room.playerStates[client.id]!.isReady = true;
+    }
 
     // Notify other players
     broadcastToRoom(room, {
@@ -278,11 +279,14 @@ class TcpServerForWidget {
     room.gameState = BlackjackGameState();
     room.gameState!.phase = GamePhase.betting;
 
-    broadcastToRoom(room, {
-      'type': 'betting_phase_start',
-      'minBet': 10,
-      'maxBet': 500,
-    });
+    for (var client in room.clients) {
+      sendToClient(client, {
+        'type': 'betting_phase_start',
+        'minBet': 10,
+        'maxBet': 500,
+        'initialChips': room.playerStates[client.id]?.chips ?? 1000,
+      });
+    }
   }
 
   void handlePlaceBet(Client client, int amount) {

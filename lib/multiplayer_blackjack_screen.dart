@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'classes/firestore_stats_manager.dart';
@@ -32,7 +34,6 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
   bool isReady = false;
   Map<String, bool> playerReadyStatus = {};
 
-  // Animation controller for card dealing
   late AnimationController _animationController;
 
   @override
@@ -74,6 +75,9 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
         case 'betting_phase_start':
           setState(() {
             gamePhase = 'betting';
+            if (data['initialChips'] != null) {
+              gameState['myChips'] = data['initialChips'];
+            }
           });
           _showNotification('Place your bets!', Colors.amber);
           break;
@@ -130,7 +134,7 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
   }
 
   void _leaveRoom() {
-    // Send leave message to server
+    // send leave message to server
     widget.channel.sink.add(jsonEncode({
       'type': 'leave',
       'room': widget.roomName,
@@ -159,6 +163,18 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
       var myState = gameState['players']?[myId];
 
       if (myResult != null && myState != null) {
+        final FirebaseFirestore firestore = FirebaseFirestore.instance;
+        try{
+          firestore
+              .collection("users")
+              .doc(FirebaseAuth
+              .instance.currentUser?.uid)
+              .update({
+                "current_chips": myResult["finalChips"],
+              });
+
+        }catch(e){}
+
         await FirestoreStatsManager.updateGameResult(
           outcome: myResult['outcome'],
           betAmount: myState['currentBet'] ?? 0,
@@ -564,7 +580,7 @@ class _MultiplayerBlackjackScreenState extends State<MultiplayerBlackjackScreen>
                       Icon(Icons.casino, color: Colors.amber),
                       SizedBox(width: 8),
                       Text(
-                        'Your Chips: ${myState?['chips'] ?? 1000}',
+                        'Your Chips: ${gameState['myChips'] ?? myState?['chips'] ?? 1000}',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
                       ),
                     ],
